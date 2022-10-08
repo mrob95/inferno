@@ -37,9 +37,7 @@ function init(evt) {
 
             // Text truncation needs to be adjusted for the current width.
             var el = frames.children;
-            for(var i = 0; i < el.length; i++) {
-                update_text(el[i]);
-            }
+            update_text_for_elements(el);
 
             // Keep search elements at a fixed distance from right edge.
             var svgWidth = svg.width.baseVal.value;
@@ -162,39 +160,92 @@ function g_to_func(e) {
     // name before it's searched, do it here before returning.
     return (func);
 }
-function update_text(e) {
-    var r = find_child(e, "rect");
-    var t = find_child(e, "text");
-    var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
-    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
-    t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
-    // Smaller than this size won't fit anything
-    if (w < 2 * fontsize * fontwidth) {
-        t.textContent = "";
-        return;
-    }
-    t.textContent = txt;
-    // Fit in full text width
-    if (/^ *\$/.test(txt) || t.getComputedTextLength() < w)
-        return;
-    if (truncate_text_right) {
-        // Truncate the right side of the text.
-        for (var x = txt.length - 2; x > 0; x--) {
-            if (t.getSubStringLength(0, x + 2) <= w) {
-                t.textContent = txt.substring(0, x) + "..";
-                return;
+function update_text_for_elements(elements) {
+    testElement = find_child(elements[0], "text");
+    var textElemNewAttributes = [];
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var r = find_child(e, "rect");
+        var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
+        var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+        newX = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
+
+
+        // Smaller than this size won't fit anything
+        if (w < 2 * fontsize * fontwidth) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+        testElement.textContent = txt;
+        // Fit in full text width
+        if (/^ *\$/.test(txt) || testElement.getComputedTextLength() < w) {
+            textElemNewAttributes.push([newX, txt]);
+            continue;
+        }
+        // Will only fit ".. "
+        if (testElement.getSubStringLength(txt.length-4, txt.length) >= w) {
+            textElemNewAttributes.push([newX, ""]);
+            continue;
+        }
+
+
+        // Binary search for a substring length which just about fits into the space,
+        // based on this algorithm:
+        // https://en.wikipedia.org/wiki/Binary_search_algorithm#Alternative_procedure
+        m = Math.floor(txt.length / 2);
+        l = 2;
+        r = txt.length-2;
+        done = false;
+        if (truncate_text_right) {
+            // Truncate the right side of the text, higher m means more text shown.
+            while (!done) {
+                m = Math.ceil((l+r)/2);
+                fits = testElement.getSubStringLength(0, m + 2) <= w;
+                done = l == r;
+                if (fits && done) {
+                    textElemNewAttributes.push([newX, txt.substring(0, m) + ".."]);
+                    break;
+                } else if (fits) {
+                    l = m; // fits, bring the left edge of the search space to the middle
+                } else if (!fits && done) {
+                    textElemNewAttributes.push([newX, txt.substring(0, m-1) + ".."]);
+                    break;
+                } else if (!fits) {
+                    r = m-1; // doesn't fit, bring the right edge of the search space to the middle
+                }
+            }
+        } else {
+            // Truncate the left side of the text, higher m means less text shown.
+            while (!done) {
+                m = Math.ceil((l+r)/2);
+                fits = testElement.getSubStringLength(m - 2, txt.length) <= w;
+                done = l == r;
+                if (fits && done) {
+                    textElemNewAttributes.push([newX, ".." + txt.substring(m, txt.length)]);
+                    break;
+                } else if (fits) {
+                    r = m-1; // fits, bring the right edge of the search space to the middle
+                } else if (!fits && done) {
+                    textElemNewAttributes.push([newX, ".." + txt.substring(m+1, txt.length)]);
+                    break;
+                } else if (!fits) {
+                    l = m; // doesn't fit, bring the left edge of the search space to the middle
+                }
             }
         }
-    } else {
-        // Truncate the left side of the text.
-        for (var x = 2; x < txt.length; x++) {
-            if (t.getSubStringLength(x - 2, txt.length) <= w) {
-                t.textContent = ".." + txt.substring(x, txt.length);
-                return;
-            }
-        }
     }
-    t.textContent = "";
+    if (textElemNewAttributes.length !== elements.length) {
+        console.log("UH OH", textElemNewAttributes.length, elements.length);
+        return;
+    }
+
+    for (var i = 0; i < elements.length; i++) {
+        var e = elements[i];
+        var values = textElemNewAttributes[i];
+        var t = find_child(e, "text");
+        t.attributes.x.value = values[0];
+        t.textContent = values[1];
+    }
 }
 // zoom
 function zoom_reset(e) {
@@ -242,6 +293,7 @@ function zoom(node) {
     var ymin = parseFloat(attr.y.value);
     unzoombtn.classList.remove("hide");
     var el = frames.children;
+    var to_update_text = [];
     for (var i = 0; i < el.length; i++) {
         var e = el[i];
         var a = find_child(e, "rect").attributes;
@@ -258,7 +310,7 @@ function zoom(node) {
             if (ex <= xmin && (ex+ew) >= xmax) {
                 e.classList.add("parent");
                 zoom_parent(e);
-                update_text(e);
+                to_update_text.push(e);
             }
             // not in current path
             else
@@ -272,10 +324,11 @@ function zoom(node) {
             }
             else {
                 zoom_child(e, xmin, width);
-                update_text(e);
+                to_update_text.push(e);
             }
         }
     }
+    update_text_for_elements(to_update_text);
 }
 function unzoom() {
     unzoombtn.classList.add("hide");
@@ -284,8 +337,8 @@ function unzoom() {
         el[i].classList.remove("parent");
         el[i].classList.remove("hide");
         zoom_reset(el[i]);
-        update_text(el[i]);
     }
+    update_text_for_elements(el);
 }
 // search
 function reset_search() {
