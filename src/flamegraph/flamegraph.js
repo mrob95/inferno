@@ -166,7 +166,7 @@ function update_text(e) {
     var r = find_child(e, "rect");
     var t = find_child(e, "text");
     var w = parseFloat(r.attributes.width.value) * frames.attributes.width.value / 100 - 3;
-    var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+    var txt = find_child(e, "title").getAttribute("function");
     t.attributes.x.value = format_percent((parseFloat(r.attributes.x.value) + (100 * 3 / frames.attributes.width.value)));
     // Smaller than this size won't fit anything
     if (w < 2 * fontsize * fontwidth) {

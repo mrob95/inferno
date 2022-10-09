@@ -585,11 +585,13 @@ where
         let _ = samples_txt_buffer.write_formatted(&samples, &Locale::en);
         let samples_txt = samples_txt_buffer.as_str();
 
-        let info = if frame.location.function.is_empty() && frame.location.depth == 0 {
+        let function: &str;
+        let info = if frame.location.function.is_empty() && frame.location.depth == 0 {g
+            function = "all";
             write!(buffer, "all ({} {}, 100%)", samples_txt, opt.count_name)
         } else {
             let pct = (100 * samples) as f64 / (timemax as f64 * opt.factor);
-            let function = deannotate(frame.location.function);
+            function = deannotate(frame.location.function);
             match frame.delta {
                 None => write!(
                     buffer,
@@ -625,7 +627,9 @@ where
             &buffer[info],
         )?;
 
-        svg.write_event(Event::Start(BytesStart::borrowed_name(b"title")))?;
+        svg.write_event(Event::Start(BytesStart::borrowed_name(b"title").with_attributes(vec![
+            ("function", function)
+        ])))?;
         svg.write_event(Event::Text(BytesText::from_plain_str(title)))?;
         svg.write_event(Event::End(BytesEnd::borrowed(b"title")))?;
 
